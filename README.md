@@ -1,5 +1,5 @@
 ## Gut-microbiota-Celiac-disease
 
-This repository will host the codes from our Celiac disease and gut microbiota study.
+This repository will host the codes from our gut microbiota study in Celiac disease.
 The data will be added soon...
 
