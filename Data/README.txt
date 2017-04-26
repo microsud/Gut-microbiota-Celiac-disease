@@ -1,0 +1,1 @@
+This folder cotains the biom and mapping files required for reproducing the analysis.
