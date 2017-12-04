@@ -1,0 +1,268 @@
+---
+title: "Celiac_supplementary"
+author: "sudarshan.shetty@wur.nl"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::html_clean:
+    highlight: kate
+---
+
+## Libraries  
+
+```{r setup, include=FALSE}
+
+library(ggplot2)
+library(ape)
+library(microbiome)
+library(dplyr)
+library(vegan)
+library(phyloseq)
+library(RColorBrewer)
+library(reshape2)
+library(ggpubr)
+
+my_theme <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+
+**Supplementary figure S1**
+
+```{r}
+
+ps.bxa <- readRDS(file="./phyloseqobjects/ps.bx.rds")
+
+ps.bx.rel <- microbiome::transform(ps.bxa, "compositional")
+
+fdr.ced.ps <- subset_samples(ps.bx.rel, Diagnosis != "DC")
+fdr.ced.ps <- prune_taxa(taxa_sums(fdr.ced.ps) > 0, fdr.ced.ps)
+
+
+otu <- abundances(fdr.ced.ps)
+meta <- meta(fdr.ced.ps)
+
+library(vegan)
+permanova <- adonis(t(otu) ~ Diagnosis,
+               data = meta, permutations=99, method = "bray")
+
+dist <- vegdist(t(otu))
+anova(betadisper(dist, meta$Diagnosis))
+
+levels(meta$Diagnosis)
+
+coef <- coefficients(permanova)["Diagnosis1",]
+top.coef <- coef[rev(order(abs(coef)))[1:10]]
+pdf("./Figures/Supplementary figure S1.pdf")
+par(mar = c(3, 14, 2, 1))
+barplot(sort(top.coef), horiz = T, las = 1, main = "Top taxa")
+dev.off()
+
+#      961783      1009894       988314       764682       815480       808758      1040713       558170       562618       543942 
+#-0.035666511 -0.015192977 -0.013667493 -0.010579482 -0.006956648  0.007031912  0.008474407  0.010219996  0.010745789  0.031018036
+
+# 961783 g__Pseudomonas
+# 1009894 g__Acinetobacter s__johnsonii
+# 988314 g__Acinetobacter
+# 764682 g__Pseudomonas
+# 815480 g__Stenotrophomonas
+# 808758 g__Novosphingobium
+# 1040713 g__Corynebacterium
+# 558170 g__Comamonas
+# 562618 g__Acinetobacter
+# 543942 g__Acinetobacter
+      
+#write_phyloseq(fdr.ced.ps, "TAXONOMY")
+
+```
+
+## Biopsy
+
+**Supplementary figure S2**
+
+```{r, fig.width=8, fig.height=4}
+
+taxic <- as.data.frame(ps.bxa@tax_table) 
+taxic$OTU <- row.names(taxic)
+taxmat <- as.matrix(taxic)
+
+# convert into phyloseq compaitble file.
+new.tax <- tax_table(taxmat)  
+tax_table(ps.bxa) <- new.tax 
+pseq.fam.bx <- aggregate_taxa(ps.bxa, "Phylum", top = 4)
+tax_table(pseq.fam.bx)[, colnames(tax_table(pseq.fam.bx))] <- gsub(tax_table(pseq.fam.bx)[, 
+                                                                                 colnames(tax_table(pseq.fam.bx))], pattern = "p__", replacement = "")
+
+
+metadf1 <- readRDS("./metadf1.rds")
+# create comaprision
+lev1 <- levels(metadf1$Diagnosis) # get the variables
+
+# make a pairwise list that we want to compare.
+L.pairs1 <- combn(seq_along(lev1), 2, simplify = FALSE, FUN = function(i)lev1[i])
+
+pseq.famrel.bx <- transform(pseq.fam.bx, "compositional")
+ps.bx.m <- psmelt(pseq.famrel.bx)
+ps.bx.m.sub <- subset(ps.bx.m, OTU != "Other")
+px2 <- ggboxplot(ps.bx.m.sub, x = "Diagnosis", y = "Abundance", 
+                 add = "dotplot", 
+                 fill = "Diagnosis", 
+                 palette = c("#d7191c", "#fdae61", "#8da0cb"), 
+                 facet.by = "OTU", 
+                 legend = "right",
+                 ylab = "Relative abundance") + stat_compare_means(comparisons = L.pairs1) 
+px2
+
+ggsave("./Figures/Supplementary figure S2.pdf", height = 8, width = 12)
+
+```
+
+
+**Supplementary figure S3**
+
+```{r, fig.width=8, fig.height=4}
+ced.ps <- subset_samples(ps.bxa, Diagnosis == "CeD")
+
+ced.ps <- core(ced.ps, detection = 5, prevalence = 50/100)
+
+
+fdr.ps <- subset_samples(ps.bxa, Diagnosis == "FDR")
+
+fdr.ps <- core(fdr.ps, detection = 5, prevalence = 50/100)
+
+dc.ps <- subset_samples(ps.bxa, Diagnosis == "DC")
+
+dc.ps <- core(dc.ps, detection = 5, prevalence = 50/100)
+
+ced.ven <- rownames(abundances(ced.ps))
+class(ced.ven)
+
+
+fdr.ven <- rownames(abundances(fdr.ps))
+
+dc.ven <- rownames(abundances(dc.ps))
+
+library(VennDiagram)
+venn.diagram(
+x = list(ced.ven, fdr.ven, dc.ven),
+category.names = c("CeD", "FDR", "DC"),
+filename = './Figures/Supplementary_figure_3.tiff',
+        output = TRUE ,
+        imagetype="tiff" ,
+        height = 25 , 
+        width = 25, 
+        units = "mm",
+        resolution = 800,
+        compression = "lzw",
+        lwd = 2,
+        lty = 'blank',
+        fill = c("#d7191c", "#8da0cb", "#fdae61"),
+        cex = 0.3,
+        fontface = "bold",
+        fontfamily = "sans",
+        cat.cex = 0.3,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.pos = c(-27, 27, 135),
+        cat.dist = c(0.055, 0.055, 0.085),
+        cat.fontfamily = "sans",
+        rotation = 1,
+        alpha = 0.7,
+        euler.d = 3,
+ext.line.lwd = 2) 
+```
+
+
+## Stool
+
+**Supplementary figure S4**
+```{r, fig.width=8, fig.height=4}
+ps.sta <- readRDS(file="./phyloseqobjects/ps.st.rds")
+taxic <- as.data.frame(ps.sta@tax_table) 
+taxic$OTU <- row.names(taxic)
+taxmat <- as.matrix(taxic)
+
+# convert into phyloseq compaitble file.
+new.tax <- tax_table(taxmat)  
+tax_table(ps.sta) <- new.tax 
+pseq.fam <- aggregate_taxa(ps.sta, "Phylum", top = 4)
+tax_table(pseq.fam)[, colnames(tax_table(pseq.fam))] <- gsub(tax_table(pseq.fam)[, 
+                                                                                 colnames(tax_table(pseq.fam))], pattern = "p__", replacement = "")
+
+pseq.famrel <- transform(pseq.fam, "compositional")
+ps.st.m <- psmelt(pseq.famrel)
+ps.st.m.sub <- subset(ps.st.m, OTU != "Other")
+px1 <- ggboxplot(ps.st.m.sub, x = "Diagnosis", y = "Abundance", 
+                 add = "dotplot", 
+                 fill = "Diagnosis", 
+                 palette = c("#d7191c", "#fdae61", "#8da0cb"), 
+                 facet.by = "OTU", 
+                 legend = "right",
+                 ylab = "Relative abundance") + stat_compare_means(comparisons = L.pairs1) 
+px1
+
+ggsave("./Figures/Supplementary figure S4.pdf.pdf", height = 8, width = 12)
+
+```
+
+
+**Supplementary figure S5**
+
+```{r, fig.width=4, fig.height=4}
+ced.ps.st <- subset_samples(ps.sta, Diagnosis == "CeD")
+
+ced.ps.st <- core(ced.ps.st, detection = 5, prevalence = 50/100)
+
+
+fdr.ps.st <- subset_samples(ps.sta, Diagnosis == "FDR")
+
+fdr.ps.st <- core(fdr.ps.st, detection = 5, prevalence = 50/100)
+
+dc.ps.st <- subset_samples(ps.sta, Diagnosis == "DC")
+
+dc.ps.st <- core(dc.ps.st, detection = 5, prevalence = 50/100)
+
+ced.ven.st <- rownames(abundances(ced.ps.st))
+
+fdr.ven.st <- rownames(abundances(fdr.ps.st))
+
+dc.ven.st <- rownames(abundances(dc.ps.st))
+
+
+venn.diagram(
+x = list(ced.ven.st, fdr.ven.st, dc.ven.st),
+category.names = c("CeD", "FDR", "DC"),
+filename = './Figures/Supplementary_figure_5.tiff',
+        output = TRUE ,
+        imagetype="tiff" ,
+        height = 25 , 
+        width = 25, 
+        units = "mm",
+        resolution = 800,
+        compression = "lzw",
+        lwd = 2,
+        lty = 'blank',
+        fill = c("#d7191c", "#8da0cb", "#fdae61"),
+        cex = 0.3,
+        fontface = "bold",
+        fontfamily = "sans",
+        cat.cex = 0.3,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.pos = c(-27, 27, 135),
+        cat.dist = c(0.055, 0.055, 0.085),
+        cat.fontfamily = "sans",
+        rotation = 1,
+        alpha = 0.7,
+        euler.d = 3,
+ext.line.lwd = 2) 
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+
+
+

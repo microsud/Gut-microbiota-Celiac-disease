@@ -1,0 +1,145 @@
+---
+title: "celiac_figure_2_3_microbiome"
+author: "sudarshan.shetty@wur.nl"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::html_clean:
+    highlight: kate
+---
+
+## Libraries  
+
+```{r setup, include=FALSE}
+
+library(ggplot2)
+library(data.table)
+library(microbiome)
+library(dplyr)
+library(vegan)
+library(RColorBrewer)
+library(reshape2)
+library(ggpubr)
+
+my_theme <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+
+```{r}
+
+ps.bxa <- readRDS(file="./phyloseqobjects/ps.bx.rds")
+
+```
+
+
+**Figure 3a**
+
+```{r}
+
+metadf1 <- readRDS("./metadf1.rds")
+class(metadf1)
+metadf.bx <- subset(metadf1, Description == "Biopsy")
+
+# create comaprision
+lev1 <- levels(metadf.bx$Diagnosis) # get the variables
+
+# make a pairwise list that we want to compare.
+L.pairs1 <- combn(seq_along(lev1), 2, simplify = FALSE, FUN = function(i)lev1[i])
+
+
+library(ggpubr)
+
+# Shannon
+p2a <- ggviolin(metadf.bx, x = "Diagnosis", y = "Shannon",
+ add = "dotplot", fill = "Diagnosis", palette = c("#d7191c", "#fdae61", "#8da0cb")) + stat_compare_means(p.adjust.method = "fdr", comparisons = L.pairs1, method = "wilcox") 
+
+print(p2a)
+
+ggsave("./Figures/Fig3a.pdf", height = 4, width = 10)
+
+```
+
+**Figure 3b**
+
+```{r}
+metadf.st <- subset(metadf1, Description == "Faeces")
+
+# create comaprision
+lev2 <- levels(metadf.st$Diagnosis) # get the variables
+
+# make a pairwise list that we want to compare.
+L.pairs2 <- combn(seq_along(lev2), 2, simplify = FALSE, FUN = function(i)lev2[i])
+
+
+library(ggpubr)
+
+# Shannon
+p2b <- ggviolin(metadf.st, x = "Diagnosis", y = "Shannon",
+ add = "dotplot", fill = "Diagnosis", palette = c("#d7191c", "#fdae61", "#8da0cb")) + stat_compare_means(p.adjust.method = "fdr", comparisons = L.pairs2, method = "wilcox") 
+
+print(p2b)
+
+p2c <- ggarrange( p2a, p2b, ncol = 2 , labels = c("a) Duodenum", "b) Faeces"), common.legend = TRUE, legend = "right")
+
+ggsave("./Figures/Fig3b.pdf", height = 4, width = 10)
+
+```
+
+**Figure 2a**
+```{r}
+
+ps.bx.log <- microbiome::transform(ps.bxa, "log10")
+
+set.seed(432)
+bx.allcca <- ordinate(ps.bx.log, "CCA",formula = otu_matrix ~ Diagnosis)
+
+
+
+anova(bx.allcca, by="terms")
+
+pp <- plot_ordination(ps.bx.log, bx.allcca, color= "Diagnosis") + scale_color_manual(values = c("#d7191c", "#fdae61", "#8da0cb")) +
+  geom_point(size = 3) + theme_bw() + my_theme
+pp 
+
+ggsave("./Figures/fig2a_bx_cca.pdf", height = 6, width = 8)
+
+```
+
+**Figure 3b**
+
+```{r}
+ps.sta <- readRDS(file="./phyloseqobjects/ps.st.rds")
+ps.st.log <- microbiome::transform(ps.sta, "log10")
+
+set.seed(4352)
+st.allcca <- ordinate(ps.st.log, "CCA",formula = otu_matrix ~ Diagnosis)
+
+
+
+anova(st.allcca, by="terms")
+
+pp0 <- plot_ordination(ps.st.log, st.allcca, color= "Diagnosis") + scale_color_manual(values = c("#d7191c", "#fdae61", "#8da0cb")) +
+  geom_point(size = 3) + theme_bw() + my_theme
+pp0 
+
+ggsave("./Figures/fig2b_st_cca.pdf.pdf", height = 6, width = 8)
+
+```
+
+
+**Figure 3 combined**
+
+```{r}
+
+p.cca <- ggarrange(pp, pp0, ncol = 2, labels = c("a) Duodenum", "b) Faeces"), common.legend = TRUE, legend = "right") 
+ggsave("./Figures/fig2_anb_cca.pdf", height = 6, width = 14)
+
+```
+
+
+
+
+
+
+
+

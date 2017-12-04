@@ -1,0 +1,314 @@
+---
+title: "Celiac disease Microbiome"
+author: "sudarshan.shetty@wur.nl"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::html_clean:
+    highlight: kate
+---
+
+
+## Libraries  
+
+```{r setup, include=FALSE}
+
+library(ggplot2)
+library(ape)
+library(data.table)
+library(microbiome)
+library(dplyr)
+library(vegan)
+library(phyloseq)
+library(RColorBrewer)
+library(reshape2)
+library(ggpubr)
+
+my_theme <- theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+```
+
+
+# Load the biom and mapping file
+
+```{r, warning = FALSE, message = FALSE}
+
+ps0 <-  read_phyloseq(otu.file = "./Input/closed_gg_merged_otu_table.biom", 
+                      metadata.file = "./Input/mapping_file_of_all_samples_2.csv", 
+                      taxonomy.file = NULL, type = "biom")
+  
+theme_set(theme_bw())
+
+# store all phyloseq object in a folder
+# dir.create("phyloseqobjects")
+
+#saveRDS(ps0, "./phyloseqobjects/ps0_raw.rds")
+
+print(ps0)
+
+```
+
+Quick look at the sample distribution.  
+
+```{r}
+
+rank_names(ps0)
+table(sample_data(ps0)$Diagnosis, sample_data(ps0)$Description)
+
+```
+
+We remove 6 month follow-up samples as they are less for optimal comparisons. 
+
+```{r, fig.height=8, fig.width=14}
+
+
+ps1 <- subset_taxa(ps0,Class!="c__Chloroplast")
+ps2 <- subset_taxa(ps1,Family!="f__Mitochondria")
+ps3 <- subset_taxa(ps2,Domain!="k__Archaea")
+ps4 <- subset_samples(ps3, Diagnosis !="6M_Fup")
+ps4 <- prune_taxa(taxa_sums(ps4) > 0, ps4)
+
+# check for library sizes
+
+nreads = colSums(otu_table(ps4))
+sample_data(ps4)$nreads = nreads
+qplot(log10(nreads), geom = "histogram")
+
+sort(sample_sums(ps4))
+
+```
+
+# quick check for outliers
+
+```{r}
+
+dir.create("Figures")
+seed <- 2828
+set.seed(seed)
+
+ps4.log <- transform(ps4, "log10p")
+
+ord_mds_bray1 = ordinate(ps4.log, "MDS", "bray")
+
+beta.ps1 <- plot_ordination(ps4.log, 
+                            ord_mds_bray1, 
+                            color="Description", 
+                            shape = "Diagnosis", label = "Subject") 
+                      
+beta.ps1 <-  beta.ps1 + 
+  scale_color_manual(values = c("#1f78b4", "#fdbf6f")) + geom_point(size= 3)
+p2 <- beta.ps1 + ggtitle("MDS based on Bray-Curtis distance") + theme_bw(base_size = 14)
+print(p2)
+
+
+
+# faeces = #fdbf6f
+# biopsy = #1f78b4
+
+
+# potentailly mislabelled
+ps5 <- subset_samples(ps4, Subject !="cb178") %>%
+  subset_samples(Subject !="cs178")
+
+
+
+```
+
+
+**Figure 1a**
+
+```{r, fig.height=8, fig.width=14}
+
+get_taxa_unique(ps5, "Phylum")
+
+plot_taxa_prevalence(ps5,"Phylum")
+
+
+ps6 <- subset_taxa(ps5,Phylum!="p__")
+
+saveRDS(ps6, "./phyloseqobjects/ps6_filterd.rds")
+
+```
+
+18275 OTUs before and 18274 OTUs after removing unclassified!
+
+
+```{r, fig.height=8, fig.width=14}
+
+
+ps6.rel <- transform(ps6, "compositional")
+
+
+ord_pcoa_bray = ordinate(ps6.rel, "PCoA", "bray")
+
+
+bray.dist <- distance(ps6.rel, "bray") 
+
+adonis(bray.dist ~ Description, data = meta(ps6))
+
+
+beta.ps2 <- plot_ordination(ps6.rel, 
+                            ord_pcoa_bray, 
+                            color="Description", 
+                            shape = "Diagnosis") 
+                      
+beta.ps2 <-  beta.ps2 + scale_color_manual(values = c("#1f78b4", "#fdbf6f")) + geom_point(size= 3)
+p2 <- beta.ps2 + my_theme 
+
+print(p2)
+
+ggsave("./Figures/fig_1a.pdf", height = 4, width = 7)
+
+
+attach(sample_data(ps6.rel))
+dist.all <- phyloseq::distance(otu_table(ps6.rel), method= 'bray')
+
+SampleType_anosim<-anosim(dist.all, Description, permutations = 999, distance = "bray")
+summary(SampleType_anosim)
+detach(sample_data(ps6.rel))
+```
+
+
+**Figure 1b**
+
+## Alpha diversity  
+
+
+```{r}
+min(sample_sums(ps6))
+#21663
+
+#dir.create("alphadiversity_table")
+
+div.all <- estimate_richness(ps6)
+#write.csv(div.all, "./alphadiversity/alpha_div_.all.csv")
+
+colnames(div.all)
+metadf1 <- meta(ps6)
+metadf1$Observed <- div.all$Observed
+metadf1$Chao1 <- div.all$Chao1
+metadf1$Shannon <- div.all$Shannon
+metadf1$Simpson <- div.all$Simpson
+metadf1$InvSimpson <- div.all$InvSimpson
+
+saveRDS(metadf1, "metadf1.rds")
+
+# create comaprision
+lev0 <- levels(metadf1$Description) # get the variables
+
+# make a pairwise list that we want to compare.
+L.pairs0 <- combn(seq_along(lev0), 2, simplify = FALSE, FUN = function(i)lev0[i])
+
+# Shannon
+plot.pd.vio <- ggviolin(metadf1, x = "Description", y = "Shannon",
+ add = "dotplot", fill = "Description", palette = c("#1f78b4", "#fdbf6f")) + stat_compare_means(comparisons = L.pairs0) 
+       #+ stat_compare_means(label.y = max(ibd.div$shannon + 3))
+
+print(plot.pd.vio)
+
+ggsave("./Figures/fig_1b.pdf", height = 4, width = 6)
+
+p0 <- ggarrange(p2,plot.pd.vio, ncol = 2, widths = c(2,1), heights = c(2,0.5), labels = c("a", "b"))
+p0
+ggsave("./Figures/Figure_1anb.pdf", height = 4, width = 10)
+
+```
+
+
+## split the analysis based on sample type  
+
+### Biopsy
+```{r}
+dir.create("./Figures/additional")
+ps.bx.0 <- subset_samples(ps6, Description == "Biopsy")
+ps.bx <- prune_taxa(taxa_sums(ps.bx.0) > 0, ps.bx.0)
+
+saveRDS(ps.bx, "./phyloseqobjects/ps.bx.rds")
+```
+
+```{r}
+
+ps.bx.rel <- transform(ps.bx, "compositional")
+
+
+ord_pcoa_bray_bx = ordinate(ps.bx.rel, "PCoA", "bray")
+
+
+bray.dist.bx <- distance(ps.bx.rel, "bray") 
+
+adonis(bray.dist.bx ~ Diagnosis, data = meta(ps.bx.rel))
+
+
+beta.psbx <- plot_ordination(ps.bx.rel, 
+                            ord_pcoa_bray_bx, 
+                            color="Diagnosis") 
+                      
+beta.psbx <-  beta.psbx + scale_color_manual(values = c("#d7191c", "#fdae61", "#8da0cb")) + geom_point(size= 3)
+p3 <- beta.psbx+ ggtitle("Biopsy")  + my_theme 
+
+print(p3)
+
+ggsave("./Figures/additional/fig1a_bx.pdf", height = 4, width = 6)
+
+attach(sample_data(ps.bx.rel))
+dist.bx <- phyloseq::distance(otu_table(ps.bx.rel), method= 'bray')
+
+bx_anosim<-anosim(dist.bx, Diagnosis, permutations = 999, distance = "bray")
+summary(bx_anosim)
+detach(sample_data(ps.bx.rel))
+
+```
+
+
+
+### Faeces
+
+
+```{r}
+
+ps.st.0 <- subset_samples(ps6, Description == "Faeces")
+ps.st <- prune_taxa(taxa_sums(ps.st.0) > 0, ps.st.0)
+saveRDS(ps.st, "./phyloseqobjects/ps.st.rds")
+```
+
+```{r}
+
+ps.st.rel <- transform(ps.st, "compositional")
+
+
+ord_pcoa_bray_st = ordinate(ps.st.rel, "PCoA", "bray")
+
+
+bray.dist.st <- distance(ps.st.rel, "bray") 
+
+adonis(bray.dist.st ~ Diagnosis, data = meta(ps.st.rel))
+
+
+beta.psst <- plot_ordination(ps.st.rel, 
+                            ord_pcoa_bray_st, 
+                            color="Diagnosis") 
+                      
+beta.psst <-  beta.psst + scale_color_manual(values = c("#d7191c", "#fdae61", "#8da0cb")) + geom_point(size= 3)
+p4 <- beta.psst + ggtitle("Faeces")  + my_theme 
+
+print(p4)
+
+ggsave("./Figures/additional/fig1b_st.pdf", height = 4, width = 6)
+
+attach(sample_data(ps.st.rel))
+dist.st <- phyloseq::distance(otu_table(ps.st.rel), method= 'bray')
+
+st_anosim<-anosim(dist.st, Diagnosis, permutations = 999, distance = "bray")
+summary(st_anosim)
+detach(sample_data(ps.st.rel))
+
+p5 <- ggarrange(p3, p4, ncol = 2, labels = c("a", "b"), common.legend = TRUE, legend = "right")
+ggsave("./Figures/additional//fig2anb_st.pdf", height = 6, width = 12)
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```
+
